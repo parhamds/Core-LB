@@ -13,9 +13,9 @@ import (
 )
 
 type RuleReq struct {
-	GwIP string   `json:"gwip"`
-	Teid []string `json:"teid"`
-	Ip   []string `json:"ip"`
+	GwIP string `json:"gwip"`
+	//Teid []string `json:"teid"`
+	Ip []string `json:"ip"`
 }
 
 type RegisterReq struct {
@@ -154,7 +154,7 @@ func execAddArp(gwip, ueip string) error {
 		log.Errorf("Error executing command: %v", err)
 		return err
 	}
-	log.Traceln("iptables rule applied successfully for ip : ", ueip)
+	log.Traceln("static arp applied successfully for ip : ", ueip)
 	return nil
 }
 
