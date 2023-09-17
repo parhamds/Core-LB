@@ -22,14 +22,22 @@ type RegisterReq struct {
 	GwIP    string `json:"gwip"`
 	CoreMac string `json:"coremac"`
 }
+type operation int
 
-var addedRule map[string]struct{}
+const (
+	ruleAdd operation = iota
+	ruleDel
+	arpAdd
+	arpDel
+)
+
+var addedRule map[string]string
 var registeredUPFs map[string]string // [gwip] coremac
 
 func main() {
 	log.SetLevel(log.TraceLevel)
 	log.Traceln("application started")
-	addedRule = make(map[string]struct{})
+	addedRule = make(map[string]string)
 	registeredUPFs = make(map[string]string)
 	http.HandleFunc("/addrule", addRuleHandler)
 	http.HandleFunc("/register", registerHandler)
@@ -62,15 +70,34 @@ func addRuleHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, i := range rulereq.Ip {
 			added := false
-			_, added = addedRule[i]
+			gwip, added := addedRule[i]
 			if !added {
-				err = execAddRule(rulereq.GwIP, i)
-				err = execAddArp(rulereq.GwIP, i)
+				err = execRule(rulereq.GwIP, i, ruleAdd)
+				err = execArp(rulereq.GwIP, i, arpAdd)
 				if err != nil {
 					sendHTTPResp(http.StatusInternalServerError, w)
 					return
 				}
-				addedRule[i] = struct{}{}
+				addedRule[i] = rulereq.GwIP
+				continue
+			}
+			if rulereq.GwIP != gwip {
+				err = execRule(gwip, i, ruleDel)
+				if err != nil {
+					sendHTTPResp(http.StatusInternalServerError, w)
+					return
+				}
+				err = execArp(gwip, i, arpDel)
+				if err != nil {
+					sendHTTPResp(http.StatusInternalServerError, w)
+					return
+				}
+				err = execRule(rulereq.GwIP, i, ruleAdd)
+				if err != nil {
+					sendHTTPResp(http.StatusInternalServerError, w)
+					return
+				}
+				addedRule[i] = rulereq.GwIP
 			}
 		}
 		if err != nil {
@@ -116,21 +143,30 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 			log.Errorln("Json unmarshal failed for http request")
 			sendHTTPResp(http.StatusBadRequest, w)
 		}
-		registeredUPFs[regReq.GwIP] = regReq.CoreMac
-		if err != nil {
-			sendHTTPResp(http.StatusInternalServerError, w)
+		if regUPFCore, ok := registeredUPFs[regReq.GwIP]; ok && regUPFCore == regReq.CoreMac {
+			sendHTTPResp(http.StatusCreated, w)
 			return
 		}
+		registeredUPFs[regReq.GwIP] = regReq.CoreMac
 		sendHTTPResp(http.StatusCreated, w)
+		return
+
 	default:
 		log.Traceln(w, "Sorry, only PUT and POST methods are supported.")
 		sendHTTPResp(http.StatusMethodNotAllowed, w)
 	}
 }
 
-func execAddRule(gwip, ueip string) error {
+func execRule(gwip, ueip string, op operation) error {
 	mark := markFromIP(gwip)
-	cmd := exec.Command("iptables", "-t", "mangle", "-A", "PREROUTING", "-d", ueip, "-j", "MARK", "--set-mark", mark)
+	var oper string
+	switch op {
+	case ruleAdd:
+		oper = "-A"
+	case ruleDel:
+		oper = "-D"
+	}
+	cmd := exec.Command("iptables", "-t", "mangle", oper, "PREROUTING", "-d", ueip, "-j", "MARK", "--set-mark", mark)
 	err := cmd.Run()
 	if err != nil {
 		log.Errorf("Error executing command: %v", err)
@@ -140,15 +176,22 @@ func execAddRule(gwip, ueip string) error {
 	return nil
 }
 
-func execAddArp(gwip, ueip string) error {
+func execArp(gwip, ueip string, op operation) error {
 	mark := markFromIP(gwip)
 	iface := fmt.Sprint("upf", mark)
-	upfmac, ok := registeredUPFs[gwip]
-	if !ok {
-		errtxt := fmt.Sprint("upf connected to ", gwip, " is not registered in exitlb")
-		return errors.New(errtxt)
+	var cmd *exec.Cmd
+
+	switch op {
+	case arpAdd:
+		upfmac, ok := registeredUPFs[gwip]
+		if !ok {
+			errtxt := fmt.Sprint("upf connected to ", gwip, " is not registered in exitlb")
+			return errors.New(errtxt)
+		}
+		cmd = exec.Command("arp", "-s", ueip, upfmac, "-i", iface)
+	case arpDel:
+		cmd = exec.Command("arp", "-d", ueip, "-i", iface)
 	}
-	cmd := exec.Command("arp", "-s", ueip, upfmac, "-i", iface)
 	err := cmd.Run()
 	if err != nil {
 		log.Errorf("Error executing command: %v", err)
