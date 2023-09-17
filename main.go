@@ -64,7 +64,7 @@ func addRuleHandler(w http.ResponseWriter, r *http.Request) {
 		var rulereq RuleReq
 		//fmt.Println("parham log : http body = ", body)
 		err = json.Unmarshal(body, &rulereq)
-		if err != nil {
+		if err != nil || rulereq.GwIP == "" || len(rulereq.Ip) == 0 {
 			log.Errorln("Json unmarshal failed for http request")
 			sendHTTPResp(http.StatusBadRequest, w)
 		}
@@ -139,7 +139,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		var regReq RegisterReq
 		//fmt.Println("parham log : http body = ", body)
 		err = json.Unmarshal(body, &regReq)
-		if err != nil {
+		if err != nil || regReq.CoreMac == "" || regReq.GwIP == "" {
 			log.Errorln("Json unmarshal failed for http request")
 			sendHTTPResp(http.StatusBadRequest, w)
 		}
@@ -167,9 +167,10 @@ func execRule(gwip, ueip string, op operation) error {
 		oper = "-D"
 	}
 	cmd := exec.Command("iptables", "-t", "mangle", oper, "PREROUTING", "-d", ueip, "-j", "MARK", "--set-mark", mark)
-	err := cmd.Run()
+	log.Traceln("executing command : ", cmd.String())
+	combinedOutput, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Errorf("Error executing command: %v", err)
+		fmt.Printf("Error executing command: %v\nCombined Output: %s", cmd.String(), combinedOutput)
 		return err
 	}
 	log.Traceln("iptables rule applied successfully for ip : ", ueip)
@@ -192,9 +193,10 @@ func execArp(gwip, ueip string, op operation) error {
 	case arpDel:
 		cmd = exec.Command("arp", "-d", ueip, "-i", iface)
 	}
-	err := cmd.Run()
+	log.Traceln("executing command : ", cmd.String())
+	combinedOutput, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Errorf("Error executing command: %v", err)
+		fmt.Printf("Error executing command: %v\nCombined Output: %s", cmd.String(), combinedOutput)
 		return err
 	}
 	log.Traceln("static arp applied successfully for ip : ", ueip)
