@@ -73,6 +73,10 @@ func addRuleHandler(w http.ResponseWriter, r *http.Request) {
 			gwip, added := addedRule[i]
 			if !added {
 				err = execRule(rulereq.GwIP, i, ruleAdd)
+				if err != nil {
+					sendHTTPResp(http.StatusInternalServerError, w)
+					return
+				}
 				err = execArp(rulereq.GwIP, i, arpAdd)
 				if err != nil {
 					sendHTTPResp(http.StatusInternalServerError, w)
@@ -93,6 +97,11 @@ func addRuleHandler(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				err = execRule(rulereq.GwIP, i, ruleAdd)
+				if err != nil {
+					sendHTTPResp(http.StatusInternalServerError, w)
+					return
+				}
+				err = execArp(rulereq.GwIP, i, ruleAdd)
 				if err != nil {
 					sendHTTPResp(http.StatusInternalServerError, w)
 					return
