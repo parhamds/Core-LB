@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -19,9 +22,17 @@ type RuleReq struct {
 }
 
 type RegisterReq struct {
-	GwIP    string `json:"gwip"`
-	CoreMac string `json:"coremac"`
+	GwIP      string `json:"gwip"`
+	CoreMac   string `json:"coremac"`
+	AccessMac string `json:"accessmac"`
+	Hostname  string `json:"hostname"`
 }
+
+type GWRegisterReq struct {
+	GwIP  string `json:"gwip"`
+	GwMac string `json:"gwmac"`
+}
+
 type operation int
 
 const (
@@ -157,6 +168,9 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 			sendHTTPResp(http.StatusCreated, w)
 			return
 		}
+		iface := getifaceName(regReq.GwIP)
+		go sendGWMac(iface, regReq.Hostname, regReq.GwIP)
+
 		registeredUPFs[regReq.GwIP] = regReq.CoreMac
 		sendHTTPResp(http.StatusCreated, w)
 		return
@@ -165,6 +179,88 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		log.Traceln(w, "Sorry, only PUT and POST methods are supported.")
 		sendHTTPResp(http.StatusMethodNotAllowed, w)
 	}
+}
+
+func GetMac(ifname string) string {
+
+	// Get the list of network interfaces.
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		fmt.Println("Error:", err)
+		return ""
+	}
+
+	// Find the interface with the specified name.
+	var targetInterface net.Interface
+	for _, iface := range ifaces {
+		if iface.Name == ifname {
+			targetInterface = iface
+			break
+		}
+	}
+
+	if targetInterface.Name == "" {
+		return ""
+	}
+
+	return targetInterface.HardwareAddr.String()
+}
+
+func sendGWMac(ifname, hostname, gwIP string) {
+	gwMac := GetMac(ifname)
+	GWRegisterReq := GWRegisterReq{
+		GwIP:  gwIP, //access gw
+		GwMac: gwMac,
+	}
+
+	registerReqJson, _ := json.Marshal(GWRegisterReq)
+
+	requestURL := fmt.Sprintf("http://%v-http:8080/registergw", hostname)
+
+	jsonBody := []byte(registerReqJson)
+
+	bodyReader := bytes.NewReader(jsonBody)
+	req, err := http.NewRequest(http.MethodPost, requestURL, bodyReader)
+	if err != nil {
+		log.Errorf("client: could not create request: %s\n", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := http.Client{
+		Timeout: 10 * time.Second,
+	}
+	done := false
+	for !done {
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Errorf("client: error making http request: %s\n", err)
+		} else if resp.StatusCode == http.StatusCreated {
+			done = true
+			log.Traceln("access mac Successfuly registered in host : ", hostname)
+			return
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+
+}
+
+func getifaceName(gwIp string) string {
+	cmd := exec.Command("sh", "-c", "ifconfig | grep -B1 "+gwIp+" | head -n1 | awk '{print $1;}'")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("Error running ip command: %v\n", err)
+		return ""
+	}
+	lines := strings.Split(string(output), "\n")
+	// Parse the route information to extract the gateway IP address
+
+	iface := lines[0]
+
+	return iface
+
 }
 
 func execRule(gwip, ueip string, op operation) error {
