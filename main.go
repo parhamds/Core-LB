@@ -112,11 +112,11 @@ func addRuleHandler(w http.ResponseWriter, r *http.Request) {
 					sendHTTPResp(http.StatusInternalServerError, w)
 					return
 				}
-				//err = execArp(gwip, i, arpDel)
-				//if err != nil {
-				//	sendHTTPResp(http.StatusInternalServerError, w)
-				//	return
-				//}
+				err = execArp(gwip, i, arpDel)
+				if err != nil {
+					sendHTTPResp(http.StatusInternalServerError, w)
+					return
+				}
 
 				addedRule[i] = rulereq.GwIP
 			}
