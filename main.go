@@ -16,9 +16,8 @@ import (
 )
 
 type RuleReq struct {
-	GwIP string `json:"gwip"`
-	//Teid []string `json:"teid"`
-	Ip []string `json:"ip"`
+	GwIP string   `json:"gwip"`
+	Ip   []string `json:"ip"`
 }
 
 type RegisterReq struct {
