@@ -16,8 +16,9 @@ Core-LB is used for load balancing the data of user equipment and give it to the
 $ echo 101 lb-UPF101 >> /etc/iproute2/rt_tables
 $ IP rule add fwmark 101 table lb-UPF101
 $ IP route add 192.168.250.3 dev UPF101 table lb-UPF101
-$ iptables -t mangle -A PREROUTING -d 192.168.252.3 -j MARK --set-mark 101
+$ iptables -t mangle -A PREROUTING -d 172.250.0.1 -j MARK --set-mark 101
 ```
 
 * lb-UPF101: rt_table name
 * UPF101: interface of Core-LB connected to UPF101
+* 172.250.0.1 is IP of the UE
